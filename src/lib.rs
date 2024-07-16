@@ -1,16 +1,175 @@
-use std::fmt;
+use std::{
+    cmp::{self, max},
+    fmt,
+    ops
+};
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Sign {
     PLUS,
     MINUS,
 }
 
+impl Sign {
+    fn of(v: i32) -> Self {
+        if v > 0 {
+            Sign::PLUS
+        } else {
+            Sign::MINUS
+        }
+    }
+}
+
+impl ops::Not for Sign {
+    type Output = Self;
+
+    fn not(self) -> Self::Output {
+        match self {
+            Sign::PLUS => Sign::MINUS,
+            Sign::MINUS => Sign::PLUS,
+        }
+    }
+}
+
+impl ops::Mul for Sign {
+    type Output = Self;
+    
+    fn mul(self, rhs: Self) -> Self::Output {
+        if self == rhs {
+            Sign::PLUS
+        } else {
+            Sign::MINUS
+        }
+    }
+}
+
+impl ops::MulAssign for Sign {
+    fn mul_assign(&mut self, rhs: Self) {
+        *self = *self * rhs;
+    }
+}
+
 use digits::Digits;
 
+#[derive(Debug, Eq)]
 struct Integer {
     sign: Sign,
     value: Vec<u32>,
+}
+
+impl Integer {
+    pub fn zero() -> Self {
+        Integer { sign: Sign::PLUS, value: vec![] }
+    }
+
+    pub fn abs(self: &Self) -> Self {
+        let Integer { sign, value} = &self;
+
+        Integer {
+            sign: Sign::PLUS,
+            value: value.to_vec()
+        }
+    }
+
+    fn cmp_abs(self: &Self, other: &Self) -> Option<cmp::Ordering> {
+        use cmp::Ordering as Ord;
+
+        let n1 = &self.value;
+        let n2 = &other.value;
+
+        let result = if n1.len() > n2.len() {
+            Ord::Greater
+        } else if n1.len() < n2.len() {
+            Ord::Less
+        } else {
+            let it_1 = n1.iter().rev();
+            let it_2 = n2.iter().rev();
+            
+            it_1.zip(it_2)
+                .find_map(|(d1, d2)| {
+                    if d1 > d2 {
+                        Some(Ord::Greater)
+                    } else if d1 < d2 {
+                        Some(Ord::Less)
+                    } else {
+                        None
+                    }
+                })
+                .map_or(Ord::Equal, |res| res)
+        };
+
+        Some(result)
+    }
+
+    fn add_abs(self: &Self, other: &Self) -> Self {
+        let (v1, v2) = (&self.value, &other.value);
+
+        let mut value: Vec<u32> = vec![];
+        let mut carry: u32 = 0;
+
+        for i in 0..max(v1.len(), v2.len()) {
+            let n1 = v1.get(i).map_or(0, |&n| n);
+            let n2 = v2.get(i).map_or(0, |&n| n);
+            
+            let space = u32::MAX - n1;
+
+            if n2 < space - carry {
+                value.push(n1 + n2 + carry);
+                carry = 0;
+            } else {
+                value.push(n1 - space + n2 + carry - 1);
+                carry = 1;
+            }
+        }
+
+        if carry > 0 {
+            value.push(carry);
+        }
+
+        Integer { sign: Sign::PLUS, value }
+    }
+
+    fn sub_abs(self: &Self, other: &Self) -> Self {
+        let (sign, v1, v2) = if self.abs() > other.abs() {
+            (Sign::PLUS, &self.value, &other.value)
+        } else {
+            (Sign::MINUS, &other.value, &self.value)
+        };
+
+        let mut value: Vec<u32> = vec![];
+        let mut borrow: u32 = 0;
+
+        for i in 0..max(v1.len(), v2.len()) {
+            let n1 = v1.get(i).map_or(0, |&n| n);
+            let n2 = v2.get(i).map_or(0, |&n| n);
+
+            if n1 >= n2 && n1 - n2 > borrow {
+                value.push(n1 - n2);
+                borrow = 0;
+            } else {
+                value.push(u32::MAX - n2 + 1 - borrow + n1);
+                borrow = 1;
+            }
+        }
+
+        Integer { sign, value }
+    }
+}
+
+impl From<i32> for Integer {
+    fn from(v: i32) -> Self {
+        match v {
+            0 => Integer::zero(),
+            i32::MIN => Integer {
+                sign: Sign::MINUS,
+                value: vec![1 << 16],
+            },
+            _ => Integer {
+                sign: Sign::of(v),
+                value: vec![v.abs().try_into().unwrap()],
+            }
+        }
+    }
 }
 
 impl fmt::Display for Integer {
@@ -38,29 +197,323 @@ impl fmt::Display for Integer {
     }
 }
 
+impl cmp::PartialEq for Integer {
+    fn eq(&self, other: &Self) -> bool {
+        let (v1, v2) = (&self.value, &other.value);
+        let (s1, s2) = (self.sign, other.sign);
+
+        if v1.len() == 0 && v2.len() == 0 {
+            true
+        } else if s1 != s2 {
+            false
+        } else {
+            v1 == v2
+        }
+    }
+}
+
+impl cmp::PartialOrd for Integer {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+        use cmp::Ordering as Ord;
+        
+        match (self.sign, other.sign) {
+            (Sign::PLUS, Sign::MINUS) => Some(Ord::Greater),
+            (Sign::MINUS, Sign::PLUS) => Some(Ord::Less),
+            (Sign::PLUS, Sign::PLUS) => self.cmp_abs(other),
+            (Sign::MINUS, Sign::MINUS) => other.cmp_abs(self)
+        }
+    }
+}
+
+impl cmp::Ord for Integer {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        self.partial_cmp(other).expect(
+            "partial_cmp for Integer must not return None."
+        )
+    }
+}
+
+impl ops::Neg for Integer {
+    type Output = Self;
+
+    fn neg(self) -> Self::Output {
+        let Integer { sign, value } = self;
+        Integer { sign: !sign, value }
+    }
+}
+
+impl ops::Add for Integer {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        match (self.sign, rhs.sign) {
+            (Sign::PLUS, Sign::PLUS) => Integer::add_abs(&self, &rhs),
+            (Sign::MINUS, Sign::MINUS) => -Integer::add_abs(&self, &rhs),
+            (Sign::PLUS, Sign::MINUS) => Integer::sub_abs(&self, &rhs),
+            (Sign::MINUS, Sign::PLUS) => -Integer::sub_abs(&self, &rhs),
+        }
+    }
+}
+
+impl ops::Sub for Integer {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        match (self.sign, rhs.sign) {
+            (Sign::PLUS, Sign::MINUS) => Integer::add_abs(&self, &rhs),
+            (Sign::MINUS, Sign::PLUS) => -Integer::add_abs(&self, &rhs),
+            (Sign::PLUS, Sign::PLUS) => Integer::sub_abs(&self, &rhs),
+            (Sign::MINUS, Sign::MINUS) => -Integer::sub_abs(&self, &rhs),
+        }
+    }
+}
+
 #[cfg(test)]
-mod tests {
+mod test_integer_from_i32 {
     use super::*;
 
     #[test]
-    fn test_integer_zero_fmt() {
+    fn zero() {
+        let ans = Integer::zero();
+        assert_eq!(ans, 0_i32.into());
+    }
+
+    #[test]
+    fn pos() {
+        let ans = Integer { sign: Sign::PLUS, value: vec![1212] };
+        assert_eq!(ans, 1212.into());
+    }
+
+    #[test]
+    fn neg() {
+        let ans = Integer { sign: Sign::MINUS, value: vec![1212] };
+        assert_eq!(ans, (-1212).into());
+    }
+
+    #[test]
+    fn max() {
+        let abs: u32 = i32::MAX.try_into().unwrap();
+        assert_eq!(abs, 2_147_483_647);
+
+        let ans = Integer {
+            sign: Sign::PLUS,
+            value: vec![abs]
+        };
+
+        assert_eq!(ans, i32::MAX.into());
+    }
+
+    #[test]
+    fn min() {
+        let abs = 1 << 16;
+        assert_eq!(abs, 2147483648);
+
+        let ans = Integer {
+            sign: Sign::MINUS,
+            value: vec![abs],
+        };
+
+        assert_eq!(ans, i32::MIN.into());
+    }
+}
+
+#[cfg(test)]
+mod test_integer_ops {
+    use super::*;
+
+    #[test]
+    fn abs_pos() {
+        let v: Integer = 1234.into();
+        let ans: Integer = 1234.into();
+        assert_eq!(ans, v.abs());
+    }
+
+    #[test]
+    fn abs_neg() {
+        let v: Integer = (-1234).into();
+        let ans: Integer = 1234.into();
+        assert_eq!(ans, v.abs());
+    }
+
+    #[test]
+    fn add_abs() {
+        let v1: Integer = (-9999).into();
+        let v2: Integer = 99.into();
+        let ans: Integer = 10_098.into();
+        assert_eq!(ans, Integer::add_abs(&v1, &v2));
+    }
+
+    #[test]
+    fn sub_abs_pos() {
+        let v1: Integer = (-9000).into();
+        let v2: Integer = 900.into();
+        let ans: Integer = 8100.into();
+        assert_eq!(ans, Integer::sub_abs(&v1, &v2));
+    }
+
+    #[test]
+    fn sub_abs_neg() {
+        let v1: Integer = (-22).into();
+        let v2: Integer = 2231.into();
+        let ans: Integer = (-2209).into();
+        assert_eq!(ans, Integer::sub_abs(&v1, &v2));
+    }
+
+    #[test]
+    fn add_small_pos_pos() {
+        let v1: Integer = 510.into();
+        let v2: Integer = 10621.into();
+        let ans: Integer = 11131.into();
+
+        assert_eq!(ans, v1 + v2);
+    }
+
+    #[test]
+    fn add_small_neg_neg() {
+        let v1: Integer = (-55_555).into();
+        let v2: Integer = (-555_555).into();
+        let ans: Integer = (-611_110).into();
+
+        assert_eq!(ans, v1 + v2);
+    }
+
+    #[test]
+    fn add_small_pos_neg_pos() {
+        let v1: Integer = 10000.into();
+        let v2: Integer = (-100).into();
+        let ans: Integer = 9900.into();
+
+        assert_eq!(ans, v1 + v2);
+    }
+
+    #[test]
+    fn add_small_pos_neg_neg() {
+        let v1: Integer = 1001.into();
+        let v2: Integer = (-10000).into();
+        let ans: Integer = (-8999).into();
+
+        assert_eq!(ans, v1 + v2);
+    }
+
+    #[test]
+    fn add_small_neg_pos_pos() {
+        let v1: Integer = (-100).into();
+        let v2: Integer = 10000.into();
+        let ans: Integer = 9900.into();
+
+        assert_eq!(ans, v1 + v2);
+    }
+
+    #[test]
+    fn add_small_neg_pos_neg() {
+        let v1: Integer = (-10000).into();
+        let v2: Integer = 1001.into();
+        let ans: Integer = (-8999).into();
+
+        assert_eq!(ans, v1 + v2);
+    }
+}
+
+#[cfg(test)]
+mod test_integer_fmt {
+    use super::*;
+
+    #[test]
+    fn zero() {
         assert_eq!("0", &format!("{}", Integer { sign: Sign::PLUS, value: vec![]}));
         assert_eq!("0", &format!("{}", Integer { sign: Sign::MINUS, value: vec![]}))
     }
 
     #[test]
-    fn test_integer_plus_fmt() {
+    fn plus() {
         assert_eq!("123", &format!("{}", Integer { sign: Sign::PLUS, value: vec![123]}));
     }
 
     #[test]
-    fn test_integer_minus_fmt() {
+    fn minus() {
         assert_eq!("-12312", &format!("-{}", Integer { sign: Sign::PLUS, value: vec![12312]}));
     }
 
     #[test]
-    fn test_integer_large() {
+    fn large() {
         assert_eq!("4294967296", format!("{}", Integer { sign: Sign::PLUS, value: vec![0, 1] }))
+    }
+}
+
+#[cfg(test)]
+mod test_integer_cmp {
+    use super::*;
+
+    #[test]
+    fn zero() {
+        let v1 = Integer { sign: Sign::PLUS, value: vec![] };
+        let v2 = Integer { sign: Sign::MINUS, value: vec![] };
+
+        assert!(v1 == v2);
+    }
+
+    #[test]
+    fn eq_plus() {
+        let v1 = Integer { sign: Sign::PLUS, value: vec![123123, 2323] };
+        let v2 = Integer { sign: Sign::PLUS, value: vec![123123, 2323] };
+
+        assert!(v1 == v2);
+    }
+    
+    #[test]
+    fn eq_minus() {
+        let v1 = Integer { sign: Sign::MINUS, value: vec![123123, 2323] };
+        let v2 = Integer { sign: Sign::MINUS, value: vec![123123, 2323] };
+
+        assert!(v1 == v2);
+    }
+    
+    #[test]
+    fn plus_minus() {
+        let v1 = Integer { sign: Sign::PLUS, value: vec![123123, 2323] };
+        let v2 = Integer { sign: Sign::MINUS, value: vec![1, 231, 12112] };
+
+        assert!(v1 > v2);
+    }
+
+    #[test]
+    fn minus_plus() {
+        let v1 = Integer { sign: Sign::MINUS, value: vec![1, 12, 999] };
+        let v2 = Integer { sign: Sign::PLUS, value: vec![121, 242, 2313] };
+
+        assert!(v1 < v2);
+    }
+
+    #[test]
+    fn greater_plus() {
+        let v1 = Integer { sign: Sign::PLUS, value: vec![123123, 23231] };
+        let v2 = Integer { sign: Sign::PLUS, value: vec![123123, 2323] };
+
+        assert!(v1 > v2);
+    }
+
+    #[test]
+    fn less_plus() {
+        let v1 = Integer { sign: Sign::PLUS, value: vec![123123, 23231] };
+        let v2 = Integer { sign: Sign::PLUS, value: vec![123123, 232312] };
+
+        assert!(v1 < v2);
+    }
+
+    #[test]
+    fn greater_minus() {
+        let v1 = Integer { sign: Sign::MINUS, value: vec![123123, 23231] };
+        let v2 = Integer { sign: Sign::MINUS, value: vec![123123, 232312] };
+
+        assert!(v1 > v2);
+    }
+
+    #[test]
+    fn less_minus() {
+        let v1 = Integer { sign: Sign::MINUS, value: vec![123123, 23231] };
+        let v2 = Integer { sign: Sign::MINUS, value: vec![123123, 2323] };
+
+        assert!(v1 < v2);
     }
 }
 
