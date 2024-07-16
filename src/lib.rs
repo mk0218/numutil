@@ -162,7 +162,7 @@ impl From<i32> for Integer {
             0 => Integer::zero(),
             i32::MIN => Integer {
                 sign: Sign::MINUS,
-                value: vec![1 << 16],
+                value: vec![1 << 31],
             },
             _ => Integer {
                 sign: Sign::of(v),
@@ -305,8 +305,8 @@ mod test_integer_from_i32 {
 
     #[test]
     fn min() {
-        let abs = 1 << 16;
-        assert_eq!(abs, 2147483648);
+        let abs = 1 << 31;
+        assert_eq!(abs, 2_147_483_648);
 
         let ans = Integer {
             sign: Sign::MINUS,
