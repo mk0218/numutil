@@ -114,21 +114,13 @@ impl From<&Vec<u8>> for Digits {
         let base = Digits(vec![2, 5, 6]);
         let mut factor = Digits(vec![1]);
         
-        for (i, v) in value.iter().enumerate() {
+        for v in value.iter() {
             let d: Digits = v.into();
             digits += d * factor.clone();
             factor = factor * base.clone();
             dbg!(&digits);
         }
         digits
-    }
-}
-
-impl Digits {
-    pub fn pow_10(p: usize) -> Self {
-        let mut v: Vec<u8> = vec![0; p + 1];
-        v[0] = 1;
-        Digits(v)
     }
 }
 
@@ -175,12 +167,5 @@ mod test_digits {
         let d_1 = Digits(vec![0, 0, 0, 1]);
         let ans = Digits(vec![0, 0, 0, 0, 0, 1]);
         assert_eq!(ans, d_0 * d_1)
-    }
-    
-    #[test]
-    fn test_digits_pow_10_zero() {
-        let ans = Digits(vec![1]);
-        let res = Digits::pow_10(0);
-        assert_eq!(ans, res);
     }
 }
