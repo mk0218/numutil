@@ -131,14 +131,14 @@ impl Integer {
                 let (share_prev, rest_prev) = _abs(v1_shr.clone(), v2.clone());
 
                 let mut rest = shl(rest_prev, 1) + (v1 - shl(v1_shr, 1));
-                let mut cnt = 0;
+                let mut share = 0;
 
                 while rest >= v2 {
                     rest = rest - v2.clone();
-                    cnt += 1;
+                    share += 1;
                 }
 
-                let share = shl(share_prev, 1) + cnt.into();
+                let share = shl(share_prev, 1) + share.into();
 
                 (share, rest)
             }
@@ -384,6 +384,14 @@ mod test_utils {
         let (v1, v2) = (Integer::from(-100), Integer::from(-30));
         let res = Integer::share_rest(v1, v2);
         let ans = (3.into(), (-10).into());
+        assert_eq!(res, ans);
+    }
+
+    #[test]
+    fn share_rest_large_to_small() {
+        let (v1, v2) = (Integer::from(100_000_000_000_000_000_i64), Integer::from(3));
+        let res = Integer::share_rest(v1, v2);
+        let ans = (33_333_333_333_333_333_i64.into(), 1.into());
         assert_eq!(res, ans);
     }
 }
