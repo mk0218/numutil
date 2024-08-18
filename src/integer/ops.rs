@@ -102,6 +102,59 @@ impl Integer {
 
         Integer { sign, value }
     }
+
+    /// Returns `v / ((2 ^ 8) ^ cnt)`.
+    fn shr_value(v: Integer, cnt: usize) -> Integer {
+        let Integer { sign, mut value } = v;
+
+        if cnt > value.len() {
+            value.clear();
+        } else if cnt > 0 {
+            value = value[cnt..].to_vec();
+        }
+
+        Integer { sign, value }
+    }
+
+    fn share_rest(self: Integer, rhs: Integer) -> (Integer, Integer) {
+        fn _abs(v1: Integer, v2: Integer) -> (Integer, Integer) {
+            if v1 < v2 {
+                (0.into(), v1)
+            }  else if v1 == v2 {
+                (1.into(), 0.into())
+            }  else {
+                let shr = |v, n| Integer::shr_value(v, n);
+                let shl = |v, n| Integer::shl_value(v, n);
+
+                let v1_shr = shr(v1.clone(), 1);
+
+                let (share_prev, rest_prev) = _abs(v1_shr.clone(), v2.clone());
+
+                let mut rest = shl(rest_prev, 1) + (v1 - shl(v1_shr, 1));
+                let mut cnt = 0;
+
+                while rest >= v2 {
+                    rest = rest - v2.clone();
+                    cnt += 1;
+                }
+
+                let share = shl(share_prev, 1) + cnt.into();
+
+                (share, rest)
+            }
+        }
+
+        let (share, rest) = _abs(self.abs(), rhs.abs());
+
+        let (sign_share, sign_rest) = match (self.sign, rhs.sign) {
+            (Sign::PLUS, Sign::PLUS) => (Sign::PLUS, Sign::PLUS),
+            (Sign::PLUS, Sign::MINUS) => (Sign::MINUS, Sign::PLUS),
+            (Sign::MINUS, Sign::PLUS) => (Sign::MINUS, Sign::MINUS),
+            (Sign::MINUS, Sign::MINUS) => (Sign::PLUS, Sign::MINUS),
+        };
+
+        (share.with_sign(sign_share), rest.with_sign(sign_rest))
+    }
     
     /// Performs u8 integer multiplication.
     /// Returns (carry, result mod 2^8).
@@ -210,6 +263,22 @@ impl ops::Mul for Integer {
     }
 }
 
+impl ops::Div for Integer {
+    type Output = Integer;
+
+    fn div(self, rhs: Self) -> Self::Output {
+        Integer::share_rest(self, rhs).0
+    }
+}
+
+impl ops::Rem for Integer {
+    type Output = Integer;
+
+    fn rem(self, rhs: Self) -> Self::Output {
+        Integer::share_rest(self, rhs).1
+    }
+}
+
 #[cfg(test)]
 mod test_utils {
     use super::Integer;
@@ -283,6 +352,38 @@ mod test_utils {
         let (v1, v2) = (255, 255);
         let res = Integer::mul_u8(v1, v2);
         let ans = (254, 1);
+        assert_eq!(res, ans);
+    }
+
+    #[test]
+    fn share_rest() {
+        let (v1, v2) = (Integer::from(100), Integer::from(30));
+        let res = Integer::share_rest(v1, v2);
+        let ans = (3.into(), 10.into());
+        assert_eq!(res, ans);
+    }
+
+    #[test]
+    fn share_rest_pos_neg() {
+        let (v1, v2) = (Integer::from(100), Integer::from(-30));
+        let res = Integer::share_rest(v1, v2);
+        let ans = ((-3).into(), 10.into());
+        assert_eq!(res, ans);
+    }
+    
+    #[test]
+    fn share_rest_neg_pos() {
+        let (v1, v2) = (Integer::from(-100), Integer::from(30));
+        let res = Integer::share_rest(v1, v2);
+        let ans = ((-3).into(), (-10).into());
+        assert_eq!(res, ans);
+    }
+    
+    #[test]
+    fn share_rest_neg_neg() {
+        let (v1, v2) = (Integer::from(-100), Integer::from(-30));
+        let res = Integer::share_rest(v1, v2);
+        let ans = (3.into(), (-10).into());
         assert_eq!(res, ans);
     }
 }
