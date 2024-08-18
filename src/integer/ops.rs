@@ -123,37 +123,34 @@ impl Integer {
             }  else if v1 == v2 {
                 (1.into(), 0.into())
             }  else {
-                let shr = |v, n| Integer::shr_value(v, n);
-                let shl = |v, n| Integer::shl_value(v, n);
+                let shr = Integer::shr_value;
+                let shl = Integer::shl_value;
 
                 let v1_shr = shr(v1.clone(), 1);
 
-                let (share_prev, rest_prev) = _abs(v1_shr.clone(), v2.clone());
+                let (q_prev, r_prev) = _abs(shr(v1.clone(), 1), v2.clone());
 
-                let mut rest = shl(rest_prev, 1) + (v1 - shl(v1_shr, 1));
-                let mut share = 0;
+                let mut r = shl(r_prev, 1) + (v1 - shl(v1_shr, 1));
+                let mut q = 0;
 
-                while rest >= v2 {
-                    rest = rest - v2.clone();
-                    share += 1;
+                while r >= v2 {
+                    (r, q) = (r - v2.clone(), q + 1);
                 }
 
-                let share = shl(share_prev, 1) + share.into();
-
-                (share, rest)
+                (shl(q_prev, 1) + q.into(), r)
             }
         }
 
-        let (share, rest) = _abs(self.abs(), rhs.abs());
+        let (q, r) = _abs(self.abs(), rhs.abs());
 
-        let (sign_share, sign_rest) = match (self.sign, rhs.sign) {
+        let (sign_q, sign_r) = match (self.sign, rhs.sign) {
             (Sign::PLUS, Sign::PLUS) => (Sign::PLUS, Sign::PLUS),
             (Sign::PLUS, Sign::MINUS) => (Sign::MINUS, Sign::PLUS),
             (Sign::MINUS, Sign::PLUS) => (Sign::MINUS, Sign::MINUS),
             (Sign::MINUS, Sign::MINUS) => (Sign::PLUS, Sign::MINUS),
         };
 
-        (share.with_sign(sign_share), rest.with_sign(sign_rest))
+        (q.with_sign(sign_q), r.with_sign(sign_r))
     }
     
     /// Performs u8 integer multiplication.
@@ -204,6 +201,12 @@ impl ops::Add for Integer {
     }
 }
 
+impl ops::AddAssign for Integer {
+    fn add_assign(&mut self, rhs: Self) {
+        *self = self.clone() + rhs;
+    }
+}
+
 impl ops::Sub for Integer {
     type Output = Self;
 
@@ -214,6 +217,12 @@ impl ops::Sub for Integer {
             (Sign::PLUS, Sign::PLUS) => Integer::sub_abs(&self, &rhs),
             (Sign::MINUS, Sign::MINUS) => -Integer::sub_abs(&self, &rhs),
         }
+    }
+}
+
+impl ops::SubAssign for Integer {
+    fn sub_assign(&mut self, rhs: Self) {
+        *self = self.clone() + rhs;
     }
 }
 
@@ -263,6 +272,12 @@ impl ops::Mul for Integer {
     }
 }
 
+impl ops::MulAssign for Integer {
+    fn mul_assign(&mut self, rhs: Self) {
+        *self = self.clone() * rhs;
+    }
+}
+
 impl ops::Div for Integer {
     type Output = Integer;
 
@@ -271,11 +286,23 @@ impl ops::Div for Integer {
     }
 }
 
+impl ops::DivAssign for Integer {
+    fn div_assign(&mut self, rhs: Self) {
+        *self = self.clone() / rhs;
+    }
+}
+
 impl ops::Rem for Integer {
     type Output = Integer;
 
     fn rem(self, rhs: Self) -> Self::Output {
         Integer::share_rest(self, rhs).1
+    }
+}
+
+impl ops::RemAssign for Integer {
+    fn rem_assign(&mut self, rhs: Self) {
+        *self = self.clone() % rhs;
     }
 }
 
